@@ -70,14 +70,16 @@
 
         .planet-discovery {
             position: absolute;
-            bottom: 20px;
-            left: 20px;
-            right: 20px;
-            background: rgba(0, 0, 0, 0.8);
-            padding: 20px;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.6);
+            padding: 10px 20px;
             border-radius: 15px;
             border: 2px solid #3ddc84;
             backdrop-filter: blur(10px);
+            width: 350px;
+            text-align: center;
         }
 
         .progress-bar {
@@ -86,7 +88,7 @@
             background: rgba(255, 255, 255, 0.2);
             border-radius: 4px;
             overflow: hidden;
-            margin: 10px 0;
+            margin: 8px 0;
         }
 
         .progress-fill {
@@ -95,18 +97,12 @@
             border-radius: 4px;
             transition: width 0.3s ease;
         }
-
+        
+        /* --- UPDATED: Hiding the controls panel --- */
         .controls {
-            position: absolute;
-            bottom: 20px;
-            right: 20px;
-            background: rgba(0, 0, 0, 0.7);
-            padding: 15px;
-            border-radius: 10px;
-            border: 2px solid #3ddc84;
-            backdrop-filter: blur(10px);
-            font-size: 12px;
+            display: none;
         }
+        /* --- END OF UPDATE --- */
 
         button {
             background: linear-gradient(45deg, #3ddc84, #00d4aa);
@@ -198,11 +194,10 @@
 
             <div class="planet-discovery">
                 <div class="planet-name" id="planetName">Searching for planets...</div>
-                <div>Discovery Progress</div>
                 <div class="progress-bar">
                     <div class="progress-fill" id="progressFill" style="width: 0%"></div>
                 </div>
-                <div id="planetDescription">Explore the galaxy to discover new worlds!</div>
+                <div id="planetDescription" style="font-size: 14px;">Explore the galaxy to discover new worlds!</div>
             </div>
 
             <div class="controls">
@@ -312,64 +307,92 @@
             }
         }
 
-        // Autopilot AI
+        // Enhanced Autopilot Logic
         function updateAutopilot() {
             if (!game.autopilot.enabled) return;
 
             const player = game.player;
-            let nearestAsteroid = null;
+            let targetAsteroid = null;
+            let closestAsteroid = null;
             let minDistance = Infinity;
+            let collisionThreat = false;
+            let escapeAngle = null;
 
-            // Find nearest asteroid
+            const avoidanceRadius = 150; 
+            const lookaheadTime = 30; 
+
             game.asteroids.forEach(asteroid => {
                 const dx = asteroid.x - player.x;
                 const dy = asteroid.y - player.y;
                 const distance = Math.sqrt(dx * dx + dy * dy);
+
+                const predictedPlayerX = player.x + player.vx * lookaheadTime;
+                const predictedPlayerY = player.y + player.vy * lookaheadTime;
+                const predictedAsteroidX = asteroid.x + asteroid.vx * lookaheadTime;
+                const predictedAsteroidY = asteroid.y + asteroid.vy * lookaheadTime;
+
+                const predictedDx = predictedAsteroidX - predictedPlayerX;
+                const predictedDy = predictedAsteroidY - predictedPlayerY;
+                const predictedDistance = Math.sqrt(predictedDx * predictedDx + predictedDy * predictedDy);
+
+                if (predictedDistance < asteroid.size + player.size + 10) {
+                    collisionThreat = true;
+                    escapeAngle = Math.atan2(dy, dx) + (Math.random() > 0.5 ? Math.PI / 2 : -Math.PI / 2);
+                    game.autopilot.experience += 0.5;
+                }
+
                 if (distance < minDistance) {
                     minDistance = distance;
-                    nearestAsteroid = asteroid;
+                    closestAsteroid = asteroid;
                 }
             });
 
-            if (nearestAsteroid) {
-                // Calculate angle to asteroid
-                const dx = nearestAsteroid.x - player.x;
-                const dy = nearestAsteroid.y - player.y;
-                const targetAngle = Math.atan2(dy, dx);
+            if (collisionThreat) {
+                player.angle = escapeAngle;
+                player.thrust = 0.5;
+                if (Math.abs(player.angle - escapeAngle) > Math.PI / 2) {
+                    player.thrust = -0.3;
+                }
+            } else if (closestAsteroid) {
+                const bulletSpeed = 10;
+                const timeToTarget = minDistance / bulletSpeed;
+                const predictedTargetX = closestAsteroid.x + closestAsteroid.vx * timeToTarget;
+                const predictedTargetY = closestAsteroid.y + closestAsteroid.vy * timeToTarget;
 
-                // Smooth rotation towards target
+                const dx = predictedTargetX - player.x;
+                const dy = predictedTargetY - player.y;
+                let targetAngle = Math.atan2(dy, dx);
+
                 let angleDiff = targetAngle - player.angle;
                 while (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
                 while (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
 
-                if (Math.abs(angleDiff) > 0.1) {
-                    player.angle += angleDiff * 0.1;
-                }
+                player.angle += angleDiff * 0.15;
 
-                // Shoot if aligned and close enough
-                if (Math.abs(angleDiff) < 0.2 && minDistance < 200) {
-                    shoot();
-                }
-
-                // Move away if too close
-                if (minDistance < 100) {
+                if (minDistance > 250) {
+                    player.thrust = 0.5;
+                } else if (minDistance < 150) {
                     player.thrust = -0.3;
-                } else if (minDistance > 300) {
-                    player.thrust = 0.3;
                 } else {
                     player.thrust = 0;
                 }
-
-                // Gain autopilot experience
-                game.autopilot.experience += 0.1;
-                if (game.autopilot.experience >= 100) {
-                    game.autopilot.level++;
-                    game.autopilot.experience = 0;
-                    document.getElementById('autopilotLevel').textContent = game.autopilot.level;
+                
+                if (Math.abs(angleDiff) < 0.1 && minDistance < 500) {
+                    shoot();
                 }
+
+                game.autopilot.experience += 0.1;
+            } else {
+                player.thrust = 0;
+            }
+
+            if (game.autopilot.experience >= 100) {
+                game.autopilot.level++;
+                game.autopilot.experience = 0;
+                document.getElementById('autopilotLevel').textContent = game.autopilot.level;
             }
         }
-
+        
         // Manual controls
         function updateInput() {
             if (game.autopilot.enabled) return;
@@ -426,11 +449,12 @@
             player.x += player.vx;
             player.y += player.vy;
 
-            // Wrap around screen
-            if (player.x < 0) player.x = canvas.width;
-            if (player.x > canvas.width) player.x = 0;
-            if (player.y < 0) player.y = canvas.height;
-            if (player.y > canvas.height) player.y = 0;
+            // Fix for the screen-wrapping glitch
+            const padding = 20;
+            if (player.x < -padding) player.x = canvas.width + padding;
+            if (player.x > canvas.width + padding) player.x = -padding;
+            if (player.y < -padding) player.y = canvas.height + padding;
+            if (player.y > canvas.height + padding) player.y = -padding;
 
             if (player.invulnerable > 0) player.invulnerable--;
 
@@ -440,7 +464,6 @@
                 bullet.y += bullet.vy;
                 bullet.life--;
 
-                // Wrap bullets
                 if (bullet.x < 0) bullet.x = canvas.width;
                 if (bullet.x > canvas.width) bullet.x = 0;
                 if (bullet.y < 0) bullet.y = canvas.height;
@@ -455,7 +478,6 @@
                 asteroid.y += asteroid.vy;
                 asteroid.angle += asteroid.rotationSpeed;
 
-                // Wrap around screen
                 if (asteroid.x < 0) asteroid.x = canvas.width;
                 if (asteroid.x > canvas.width) asteroid.x = 0;
                 if (asteroid.y < 0) asteroid.y = canvas.height;
@@ -468,7 +490,6 @@
             // Update planet discovery
             updatePlanetDiscovery();
 
-            // Check level completion
             if (game.asteroids.length === 0) {
                 game.level++;
                 createAsteroids(3 + game.level);
@@ -477,7 +498,6 @@
         }
 
         function checkCollisions() {
-            // Bullet-asteroid collisions
             game.bullets.forEach((bullet, bulletIndex) => {
                 game.asteroids.forEach((asteroid, asteroidIndex) => {
                     const dx = bullet.x - asteroid.x;
@@ -485,18 +505,14 @@
                     const distance = Math.sqrt(dx * dx + dy * dy);
 
                     if (distance < asteroid.size) {
-                        // Remove bullet and asteroid
                         game.bullets.splice(bulletIndex, 1);
                         game.asteroids.splice(asteroidIndex, 1);
 
-                        // Add score
                         game.score += Math.floor(asteroid.size);
                         document.getElementById('score').textContent = game.score;
 
-                        // Add particles
                         createParticles(asteroid.x, asteroid.y, 8);
 
-                        // Split asteroid if large enough
                         if (asteroid.size > 25) {
                             for (let i = 0; i < 2; i++) {
                                 game.asteroids.push({
@@ -511,13 +527,11 @@
                             }
                         }
 
-                        // Update planet discovery progress
                         game.planetDiscovery.progress += 2;
                     }
                 });
             });
 
-            // Player-asteroid collisions
             if (game.player.invulnerable === 0) {
                 game.asteroids.forEach(asteroid => {
                     const dx = game.player.x - asteroid.x;
@@ -594,7 +608,6 @@
         function render() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Draw player
             const player = game.player;
             ctx.save();
             ctx.translate(player.x, player.y);
@@ -611,7 +624,6 @@
                 ctx.closePath();
                 ctx.stroke();
 
-                // Thrust effect
                 if (player.thrust > 0) {
                     ctx.strokeStyle = '#ff4444';
                     ctx.beginPath();
@@ -623,7 +635,6 @@
             }
             ctx.restore();
 
-            // Draw bullets
             ctx.fillStyle = '#3ddc84';
             game.bullets.forEach(bullet => {
                 ctx.beginPath();
@@ -631,7 +642,6 @@
                 ctx.fill();
             });
 
-            // Draw asteroids
             ctx.strokeStyle = '#888';
             ctx.lineWidth = 2;
             game.asteroids.forEach(asteroid => {
@@ -653,7 +663,6 @@
                 ctx.restore();
             });
 
-            // Draw particles
             game.particles = game.particles.filter(particle => {
                 particle.x += particle.vx;
                 particle.y += particle.vy;
@@ -689,7 +698,6 @@
             canvas.height = window.innerHeight;
         });
 
-        // Show Android logo on load
         window.addEventListener('load', () => {
             const logo = document.createElement('div');
             logo.className = 'android-logo';
