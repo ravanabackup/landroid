@@ -243,7 +243,8 @@
                     { name: "TOI-715 b", description: "A super-Earth in the habitable zone of a nearby red dwarf" },
                     { name: "Android Prime", description: "🤖 The legendary home planet of all Android beings!" }
                 ]
-            }
+            },
+            lastAsteroidSpawn: 0
         };
 
         function createStars() {
@@ -263,16 +264,21 @@
         function createAsteroids(count) {
             game.asteroids = [];
             for (let i = 0; i < count; i++) {
-                game.asteroids.push({
-                    x: Math.random() * canvas.width,
-                    y: Math.random() * canvas.height,
-                    vx: (Math.random() - 0.5) * 4,
-                    vy: (Math.random() - 0.5) * 4,
-                    size: Math.random() * 30 + 20,
-                    angle: Math.random() * Math.PI * 2,
-                    rotationSpeed: (Math.random() - 0.5) * 0.1
-                });
+                game.asteroids.push(createSingleAsteroid());
             }
+        }
+
+        function createSingleAsteroid() {
+            return {
+                x: Math.random() * canvas.width,
+                y: Math.random() * canvas.height,
+                vx: (Math.random() - 0.5) * 4,
+                vy: (Math.random() - 0.5) * 4,
+                size: Math.random() * 30 + 20,
+                angle: Math.random() * Math.PI * 2,
+                rotationSpeed: (Math.random() - 0.5) * 0.1,
+                health: 1
+            };
         }
 
         document.addEventListener('keydown', (e) => {
@@ -425,7 +431,13 @@
             checkCollisions();
             updatePlanetDiscovery();
 
-            if (game.asteroids.length === 0) {
+            if (game.autopilot.enabled) {
+                const now = Date.now();
+                if (now - game.lastAsteroidSpawn > 500) {
+                    game.asteroids.push(createSingleAsteroid());
+                    game.lastAsteroidSpawn = now;
+                }
+            } else if (game.asteroids.length === 0) {
                 game.level++;
                 createAsteroids(3 + game.level);
                 document.getElementById('level').textContent = game.level;
@@ -441,28 +453,36 @@
 
                     if (distance < asteroid.size) {
                         game.bullets.splice(bulletIndex, 1);
-                        game.asteroids.splice(asteroidIndex, 1);
-
-                        game.score += Math.floor(asteroid.size);
-                        document.getElementById('score').textContent = game.score;
-
-                        createParticles(asteroid.x, asteroid.y, 8);
-
-                        if (asteroid.size > 25) {
-                            for (let i = 0; i < 2; i++) {
-                                game.asteroids.push({
-                                    x: asteroid.x + (Math.random() - 0.5) * 20,
-                                    y: asteroid.y + (Math.random() - 0.5) * 20,
-                                    vx: (Math.random() - 0.5) * 6,
-                                    vy: (Math.random() - 0.5) * 6,
-                                    size: asteroid.size * 0.6,
-                                    angle: Math.random() * Math.PI * 2,
-                                    rotationSpeed: (Math.random() - 0.5) * 0.15
-                                });
-                            }
+                        
+                        if (game.autopilot.enabled) {
+                            asteroid.health -= 0.1;
+                        } else {
+                            asteroid.health = 0;
                         }
 
-                        game.planetDiscovery.progress += 2;
+                        if (asteroid.health <= 0) {
+                            game.asteroids.splice(asteroidIndex, 1);
+                            game.score += Math.floor(asteroid.size);
+                            document.getElementById('score').textContent = game.score;
+
+                            createParticles(asteroid.x, asteroid.y, 8);
+
+                            if (asteroid.size > 25) {
+                                for (let i = 0; i < 2; i++) {
+                                    game.asteroids.push({
+                                        x: asteroid.x + (Math.random() - 0.5) * 20,
+                                        y: asteroid.y + (Math.random() - 0.5) * 20,
+                                        vx: (Math.random() - 0.5) * 6,
+                                        vy: (Math.random() - 0.5) * 6,
+                                        size: asteroid.size * 0.6,
+                                        angle: Math.random() * Math.PI * 2,
+                                        rotationSpeed: (Math.random() - 0.5) * 0.15,
+                                        health: 1
+                                    });
+                                }
+                            }
+                            game.planetDiscovery.progress += 2;
+                        }
                     }
                 });
             });
@@ -580,12 +600,19 @@
                 ctx.fill();
             });
 
-            ctx.strokeStyle = '#888';
-            ctx.lineWidth = 2;
             game.asteroids.forEach(asteroid => {
                 ctx.save();
                 ctx.translate(asteroid.x, asteroid.y);
                 ctx.rotate(asteroid.angle);
+
+                if (game.autopilot.enabled) {
+                    const healthColor = Math.floor(asteroid.health * 255);
+                    ctx.strokeStyle = `rgb(${255 - healthColor}, ${healthColor}, 0)`;
+                } else {
+                    ctx.strokeStyle = '#888';
+                }
+                
+                ctx.lineWidth = 2;
                 ctx.beginPath();
                 const points = 8;
                 for (let i = 0; i < points; i++) {
